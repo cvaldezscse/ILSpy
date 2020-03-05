@@ -36,7 +36,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		protected AbstractTypeParameter(IEntity owner, int index, string name, VarianceModifier variance)
 		{
 			if (owner == null)
-				throw new ArgumentNullException("owner");
+				throw new ArgumentNullException(nameof(owner));
 			this.owner = owner;
 			this.compilation = owner.Compilation;
 			this.ownerType = owner.SymbolKind;
@@ -48,7 +48,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		protected AbstractTypeParameter(ICompilation compilation, SymbolKind ownerType, int index, string name, VarianceModifier variance)
 		{
 			if (compilation == null)
-				throw new ArgumentNullException("compilation");
+				throw new ArgumentNullException(nameof(compilation));
 			this.compilation = compilation;
 			this.ownerType = ownerType;
 			this.index = index;
@@ -194,11 +194,11 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		}
 
 		bool IType.IsByRefLike => false;
-		Nullability IType.Nullability => NullabilityConstraint;
+		Nullability IType.Nullability => Nullability.Oblivious;
 
 		public IType ChangeNullability(Nullability nullability)
 		{
-			if (nullability == NullabilityConstraint)
+			if (nullability == Nullability.Oblivious)
 				return this;
 			else
 				return new NullabilityAnnotatedTypeParameter(this, nullability);
@@ -220,7 +220,11 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 			get { return EmptyList<IType>.Instance; }
 		}
 
-		public abstract IEnumerable<IType> DirectBaseTypes { get; }
+		public IEnumerable<IType> DirectBaseTypes {
+			get { return TypeConstraints.Select(t => t.Type); }
+		}
+
+		public abstract IReadOnlyList<TypeConstraint> TypeConstraints { get; }
 		
 		public string Name {
 			get { return name; }
@@ -366,7 +370,7 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		
 		public override string ToString()
 		{
-			return this.ReflectionName + " (owner=" + owner + ")";
+			return this.ReflectionName;
 		}
 	}
 }

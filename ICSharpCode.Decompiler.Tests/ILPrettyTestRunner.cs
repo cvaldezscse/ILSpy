@@ -59,6 +59,12 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void Issue684()
+		{
+			Run();
+		}
+
+		[Test]
 		public void Issue959()
 		{
 			Run();
@@ -89,15 +95,27 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void Issue1922()
+		{
+			Run();
+		}
+
+		[Test]
 		public void FSharpUsing_Debug()
 		{
-			Run(settings: new DecompilerSettings { RemoveDeadCode = true });
+			Run(settings: new DecompilerSettings { RemoveDeadStores = true });
 		}
 
 		[Test]
 		public void FSharpUsing_Release()
 		{
-			Run(settings: new DecompilerSettings { RemoveDeadCode = true });
+			Run(settings: new DecompilerSettings { RemoveDeadStores = true });
+		}
+
+		[Test]
+		public void DirectCallToExplicitInterfaceImpl()
+		{
+			Run();
 		}
 
 		[Test]
@@ -143,6 +161,12 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void Issue1681()
+		{
+			Run();
+		}
+
+		[Test]
 		public void Issue1454()
 		{
 			Run();
@@ -170,14 +194,20 @@ namespace ICSharpCode.Decompiler.Tests
 		public void FSharpLoops_Debug()
 		{
 			CopyFSharpCoreDll();
-			Run(settings: new DecompilerSettings { RemoveDeadCode = true });
+			Run(settings: new DecompilerSettings { RemoveDeadStores = true });
 		}
 
 		[Test]
 		public void FSharpLoops_Release()
 		{
 			CopyFSharpCoreDll();
-			Run(settings: new DecompilerSettings { RemoveDeadCode = true });
+			Run(settings: new DecompilerSettings { RemoveDeadStores = true });
+		}
+
+		[Test]
+		public void WeirdEnums()
+		{
+			Run();
 		}
 
 		void Run([CallerMemberName] string testName = null, DecompilerSettings settings = null)

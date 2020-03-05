@@ -66,6 +66,11 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 				S s = this;
 				s.SetField();
 			}
+
+			public void UseField(int val)
+			{
+				UseField(Get<S>().Field);
+			}
 		}
 
 #if CS72
@@ -179,7 +184,7 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		public static void Issue56(int i, out string str)
 		{
 			str = "qq";
-			str += i.ToString();
+			str += i;
 		}
 
 		public static void CopyAroundAndModifyField(S s)
@@ -262,6 +267,16 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			R r = Get<R>();
 			r.Property = 2;
 #endif
+		}
+
+		public static void CallOnFieldOfTemporary()
+		{
+			Get<S>().Field.ToString();
+		}
+
+		public static string CallOnIntegerConstant()
+		{
+			return ulong.MaxValue.ToString();
 		}
 	}
 }

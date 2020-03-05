@@ -133,12 +133,14 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 		
 		IEnumerable<IAttribute> IMethod.GetReturnTypeAttributes() => EmptyList<IAttribute>.Instance;
 		bool IMethod.ReturnTypeIsRefReadOnly => false;
+		bool IMethod.ThisIsRefReadOnly => false;
 
 		public IReadOnlyList<ITypeParameter> TypeParameters { get; set; } = EmptyList<ITypeParameter>.Instance;
 
 		IReadOnlyList<IType> IMethod.TypeArguments => TypeParameters;
 
 		bool IMethod.IsExtensionMethod => false;
+		bool IMethod.IsLocalFunction => false;
 		bool IMethod.IsConstructor => symbolKind == SymbolKind.Constructor;
 		bool IMethod.IsDestructor => symbolKind == SymbolKind.Destructor;
 		bool IMethod.IsOperator => symbolKind == SymbolKind.Operator;

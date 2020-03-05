@@ -23,6 +23,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Humanizer;
+using ICSharpCode.Decompiler.CSharp.OutputVisitor;
 using ICSharpCode.Decompiler.IL;
 using ICSharpCode.Decompiler.Semantics;
 using ICSharpCode.Decompiler.TypeSystem;
@@ -140,7 +141,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			// remove unused variables before assigning names
 			function.Variables.RemoveDead();
 			int numDisplayClassLocals = 0;
-			foreach (var v in function.Variables) {
+			foreach (var v in function.Variables.OrderBy(v => v.Name)) {
 				switch (v.Kind) {
 					case VariableKind.Parameter: // ignore
 						break;
@@ -162,6 +163,11 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 						break;
 				}
 			}
+			foreach (var localFunction in function.LocalFunctions) {
+				if (!LocalFunctionDecompiler.ParseLocalFunctionName(localFunction.Name, out _, out var newName) || !IsValidName(newName))
+					newName = null;
+				localFunction.Name = newName;
+			}
 			// Now generate names:
 			var mapping = new Dictionary<ILVariable, string>(ILVariableEqualityComparer.Instance);
 			foreach (var inst in function.Descendants.OfType<IInstructionWithVariableOperand>()) {
@@ -173,6 +179,13 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				} else {
 					v.Name = name;
 				}
+			}
+			foreach (var localFunction in function.LocalFunctions) {
+				var newName = localFunction.Name;
+				if (newName == null) {
+					newName = GetAlternativeName("f");
+				}
+				localFunction.Name = newName;
 			}
 		}
 
@@ -231,8 +244,12 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				reservedVariableNames.Add(nameWithoutDigits, number - 1);
 			}
 			int count = ++reservedVariableNames[nameWithoutDigits];
+			string nameWithDigits = nameWithoutDigits + count.ToString();
+			if (oldVariableName == nameWithDigits) {
+				return oldVariableName;
+			}
 			if (count != 1) {
-				return nameWithoutDigits + count.ToString();
+				return nameWithDigits;
 			} else {
 				return nameWithoutDigits;
 			}
@@ -405,7 +422,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				// remove the 'I' for interfaces
 				if (name.Length >= 3 && name[0] == 'I' && char.IsUpper(name[1]) && char.IsLower(name[2]))
 					name = name.Substring(1);
-				name = CleanUpVariableName(name);
+				name = CleanUpVariableName(name) ?? "obj";
 			}
 			return name;
 		}
@@ -450,6 +467,10 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			else if (name.Length > 1 && name[0] == '_' && (char.IsLetter(name[1]) || name[1] == '_'))
 				name = name.Substring(1);
 
+			if (TextWriterTokenWriter.ContainsNonPrintableIdentifierChar(name)) {
+				return null;
+			}
+
 			if (name.Length == 0)
 				return "obj";
 			else
@@ -481,7 +502,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 						AddExistingName(reservedVariableNames, v.Name);
 				}
 			}
-			foreach (var f in rootFunction.Method.DeclaringTypeDefinition.Fields.Select(f => f.Name))
+			foreach (var f in rootFunction.Method.DeclaringTypeDefinition.GetFields().Select(f => f.Name))
 				AddExistingName(reservedVariableNames, f);
 			return reservedVariableNames;
 		}

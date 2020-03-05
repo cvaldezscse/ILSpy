@@ -9,13 +9,13 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="ICSharpCode.ILSpy"
-    Publisher="CN=ICSharpCode"
+    Name="17310ICSharpCodeTeam.ILSpy"
+    Publisher="CN=2A240D0E-77E6-4732-9B57-AD934336A43E"
     Version="$INSERTMAJORVERSION$.$INSERTMINORVERSION$.$INSERTREVISION$.0" />
 
   <Properties>
     <DisplayName>ILSpy</DisplayName>
-    <PublisherDisplayName>ICSharpCode</PublisherDisplayName>
+    <PublisherDisplayName>ICSharpCode Team</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
   </Properties>
 
@@ -37,7 +37,13 @@
         BackgroundColor="transparent"
         Square150x150Logo="Images\Square150x150Logo.png"
         Square44x44Logo="Images\Square44x44Logo.png">
-        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png"  Square71x71Logo="Images\SmallTile.png" Square310x310Logo="Images\LargeTile.png"/>
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" Square71x71Logo="Images\SmallTile.png" Square310x310Logo="Images\LargeTile.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+            <uap:ShowOn Tile="square310x310Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
         <uap:SplashScreen Image="Images\SplashScreen.png" />
       </uap:VisualElements>
 

@@ -123,13 +123,22 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 				var signature = propertyDef.DecodeSignature(module.TypeProvider, genericContext);
 				var accessors = propertyDef.GetAccessors();
 				ParameterHandleCollection? parameterHandles;
-				if (!accessors.Getter.IsNil)
-					parameterHandles = module.metadata.GetMethodDefinition(accessors.Getter).GetParameters();
-				else if (!accessors.Setter.IsNil)
-					parameterHandles = module.metadata.GetMethodDefinition(accessors.Setter).GetParameters();
-				else
+				Nullability nullableContext;
+				if (!accessors.Getter.IsNil) {
+					var getter = module.metadata.GetMethodDefinition(accessors.Getter);
+					parameterHandles = getter.GetParameters();
+					nullableContext = getter.GetCustomAttributes().GetNullableContext(module.metadata)
+						?? DeclaringTypeDefinition?.NullableContext ?? Nullability.Oblivious;
+				} else if (!accessors.Setter.IsNil) {
+					var setter = module.metadata.GetMethodDefinition(accessors.Setter);
+					parameterHandles = setter.GetParameters();
+					nullableContext = setter.GetCustomAttributes().GetNullableContext(module.metadata)
+						?? DeclaringTypeDefinition?.NullableContext ?? Nullability.Oblivious;
+				} else {
 					parameterHandles = null;
-				(returnType, parameters) = MetadataMethod.DecodeSignature(module, this, signature, parameterHandles);
+					nullableContext = DeclaringTypeDefinition?.NullableContext ?? Nullability.Oblivious;
+				}
+				(returnType, parameters) = MetadataMethod.DecodeSignature(module, this, signature, parameterHandles, nullableContext);
 			} catch (BadImageFormatException) {
 				returnType = SpecialType.UnknownType;
 				parameters = Empty<IParameter>.Array;
@@ -187,36 +196,9 @@ namespace ICSharpCode.Decompiler.TypeSystem.Implementation
 						return baseMember.Accessibility;
 				}
 			}
-			return MergePropertyAccessibility(
+			return AccessibilityExtensions.Union(
 				this.Getter?.Accessibility ?? Accessibility.None,
 				this.Setter?.Accessibility ?? Accessibility.None);
-		}
-
-		static internal Accessibility MergePropertyAccessibility(Accessibility left, Accessibility right)
-		{
-			if (left == Accessibility.Public || right == Accessibility.Public)
-				return Accessibility.Public;
-
-			if (left == Accessibility.ProtectedOrInternal || right == Accessibility.ProtectedOrInternal)
-				return Accessibility.ProtectedOrInternal;
-
-			if (left == Accessibility.Protected && right == Accessibility.Internal ||
-				left == Accessibility.Internal && right == Accessibility.Protected)
-				return Accessibility.ProtectedOrInternal;
-
-			if (left == Accessibility.Protected || right == Accessibility.Protected)
-				return Accessibility.Protected;
-
-			if (left == Accessibility.Internal || right == Accessibility.Internal)
-				return Accessibility.Internal;
-
-			if (left == Accessibility.ProtectedAndInternal || right == Accessibility.ProtectedAndInternal)
-				return Accessibility.ProtectedAndInternal;
-
-			if (left == Accessibility.Private || right == Accessibility.Private)
-				return Accessibility.Private;
-
-			return left;
 		}
 		#endregion
 

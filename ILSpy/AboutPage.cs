@@ -18,8 +18,6 @@
 
 using System;
 using System.ComponentModel;
-using System.ComponentModel.Composition;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -29,12 +27,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Navigation;
 using System.Xml.Linq;
 
 using ICSharpCode.AvalonEdit.Rendering;
 using ICSharpCode.Decompiler;
 using ICSharpCode.ILSpy.Properties;
 using ICSharpCode.ILSpy.TextView;
+
 using OSVersionHelper;
 
 namespace ICSharpCode.ILSpy
@@ -42,13 +42,9 @@ namespace ICSharpCode.ILSpy
 	[ExportMainMenuCommand(Menu = nameof(Resources._Help), Header = nameof(Resources._About), MenuOrder = 99999)]
 	sealed class AboutPage : SimpleCommand
 	{
-		[Import]
-		DecompilerTextView decompilerTextView = null;
-		
 		public override void Execute(object parameter)
 		{
-			MainWindow.Instance.UnselectAll();
-			Display(decompilerTextView);
+			MainWindow.Instance.NavigateTo(new RequestNavigateEventArgs(new Uri("resource://aboutpage"), null));
 		}
 		
 		static readonly Uri UpdateUrl = new Uri("https://ilspy.net/updates.xml");
@@ -58,7 +54,7 @@ namespace ICSharpCode.ILSpy
 		
 		public static void Display(DecompilerTextView textView)
 		{
-			AvalonEditTextOutput output = new AvalonEditTextOutput() { EnableHyperlinks = true };
+			AvalonEditTextOutput output = new AvalonEditTextOutput() { Title = Resources.About, EnableHyperlinks = true };
 			output.WriteLine(Resources.ILSpyVersion + RevisionClass.FullVersion);
 			if(WindowsVersionHelper.HasPackageIdentity) {
 				output.WriteLine($"Package Name: {WindowsVersionHelper.GetPackageFamilyName()}");
@@ -91,7 +87,8 @@ namespace ICSharpCode.ILSpy
 			foreach (var plugin in App.ExportProvider.GetExportedValues<IAboutPageAddition>())
 				plugin.Write(output);
 			output.WriteLine();
-			using (Stream s = typeof(AboutPage).Assembly.GetManifestResourceStream(typeof(AboutPage), "README.txt")) {
+			output.Address = new Uri("resource://AboutPage");
+			using (Stream s = typeof(AboutPage).Assembly.GetManifestResourceStream(typeof(AboutPage), "ILSpyAboutPage.txt")) {
 				using (StreamReader r = new StreamReader(s)) {
 					string line;
 					while ((line = r.ReadLine()) != null) {
@@ -99,10 +96,10 @@ namespace ICSharpCode.ILSpy
 					}
 				}
 			}
-			output.AddVisualLineElementGenerator(new MyLinkElementGenerator("SharpDevelop", "http://www.icsharpcode.net/opensource/sd/"));
 			output.AddVisualLineElementGenerator(new MyLinkElementGenerator("MIT License", "resource:license.txt"));
 			output.AddVisualLineElementGenerator(new MyLinkElementGenerator("LGPL", "resource:LGPL.txt"));
 			output.AddVisualLineElementGenerator(new MyLinkElementGenerator("MS-PL", "resource:MS-PL.txt"));
+			output.AddVisualLineElementGenerator(new MyLinkElementGenerator("third-party notices", "resource:third-party-notices.txt"));
 			textView.ShowText(output);
 		}
 		
@@ -129,20 +126,19 @@ namespace ICSharpCode.ILSpy
 			button.Cursor = Cursors.Arrow;
 			stackPanel.Children.Add(button);
 			
-			button.Click += delegate {
+			button.Click += async delegate {
 				button.Content = Resources.Checking;
 				button.IsEnabled = false;
-				GetLatestVersionAsync().ContinueWith(
-					delegate (Task<AvailableVersionInfo> task) {
-						try {
-							stackPanel.Children.Clear();
-							ShowAvailableVersion(task.Result, stackPanel);
-						} catch (Exception ex) {
-							AvalonEditTextOutput exceptionOutput = new AvalonEditTextOutput();
-							exceptionOutput.WriteLine(ex.ToString());
-							textView.ShowText(exceptionOutput);
-						}
-					}, TaskScheduler.FromCurrentSynchronizationContext());
+				
+				try {
+					AvailableVersionInfo vInfo = await GetLatestVersionAsync();
+					stackPanel.Children.Clear();
+					ShowAvailableVersion(vInfo, stackPanel);
+				} catch (Exception ex) {
+					AvalonEditTextOutput exceptionOutput = new AvalonEditTextOutput();
+					exceptionOutput.WriteLine(ex.ToString());
+					textView.ShowText(exceptionOutput);
+				}
 			};
 		}
 		
@@ -183,36 +179,25 @@ namespace ICSharpCode.ILSpy
 			}
 		}
 		
-		static Task<AvailableVersionInfo> GetLatestVersionAsync()
+		static async Task<AvailableVersionInfo> GetLatestVersionAsync()
 		{
-			var tcs = new TaskCompletionSource<AvailableVersionInfo>();
-			new Action(() => {
-				WebClient wc = new WebClient();
-				IWebProxy systemWebProxy = WebRequest.GetSystemWebProxy();
-				systemWebProxy.Credentials = CredentialCache.DefaultCredentials;
-				wc.Proxy = systemWebProxy;
-				wc.DownloadDataCompleted += delegate(object sender, DownloadDataCompletedEventArgs e) {
-					if (e.Error != null) {
-						tcs.SetException(e.Error);
-					} else {
-						try {
-							XDocument doc = XDocument.Load(new MemoryStream(e.Result));
-							var bands = doc.Root.Elements("band");
-							var currentBand = bands.FirstOrDefault(b => (string)b.Attribute("id") == band) ?? bands.First();
-							Version version = new Version((string)currentBand.Element("latestVersion"));
-							string url = (string)currentBand.Element("downloadUrl");
-							if (!(url.StartsWith("http://", StringComparison.Ordinal) || url.StartsWith("https://", StringComparison.Ordinal)))
-								url = null; // don't accept non-urls
-							latestAvailableVersion = new AvailableVersionInfo { Version = version, DownloadUrl = url };
-							tcs.SetResult(latestAvailableVersion);
-						} catch (Exception ex) {
-							tcs.SetException(ex);
-						}
-					}
-				};
-				wc.DownloadDataAsync(UpdateUrl);
-			}).BeginInvoke(null, null);
-			return tcs.Task;
+			WebClient wc = new WebClient();
+			IWebProxy systemWebProxy = WebRequest.GetSystemWebProxy();
+			systemWebProxy.Credentials = CredentialCache.DefaultCredentials;
+			wc.Proxy = systemWebProxy;
+
+			string data = await wc.DownloadStringTaskAsync(UpdateUrl);
+
+			XDocument doc = XDocument.Load(new StringReader(data));
+			var bands = doc.Root.Elements("band");
+			var currentBand = bands.FirstOrDefault(b => (string)b.Attribute("id") == band) ?? bands.First();
+			Version version = new Version((string)currentBand.Element("latestVersion"));
+			string url = (string)currentBand.Element("downloadUrl");
+			if (!(url.StartsWith("http://", StringComparison.Ordinal) || url.StartsWith("https://", StringComparison.Ordinal)))
+				url = null; // don't accept non-urls
+
+			latestAvailableVersion = new AvailableVersionInfo { Version = version, DownloadUrl = url };
+			return latestAvailableVersion;
 		}
 		
 		sealed class AvailableVersionInfo
@@ -274,9 +259,7 @@ namespace ICSharpCode.ILSpy
 			
 			void OnPropertyChanged(string propertyName)
 			{
-				if (PropertyChanged != null) {
-					PropertyChanged(this, new PropertyChangedEventArgs(propertyName));
-				}
+				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 			}
 		}
 		
@@ -285,10 +268,10 @@ namespace ICSharpCode.ILSpy
 		/// Returns the download URL if an update is available.
 		/// Returns null if no update is available, or if no check was performed.
 		/// </summary>
-		public static Task<string> CheckForUpdatesIfEnabledAsync(ILSpySettings spySettings)
+		public static async Task<string> CheckForUpdatesIfEnabledAsync(ILSpySettings spySettings)
 		{
-			var tcs = new TaskCompletionSource<string>();
 			UpdateSettings s = new UpdateSettings(spySettings);
+
 			// If we're in an MSIX package, updates work differently
 			if (s.AutomaticUpdateCheckEnabled && !WindowsVersionHelper.HasPackageIdentity) {
 				// perform update check if we never did one before;
@@ -297,40 +280,34 @@ namespace ICSharpCode.ILSpy
 				    || s.LastSuccessfulUpdateCheck < DateTime.UtcNow.AddDays(-7)
 				    || s.LastSuccessfulUpdateCheck > DateTime.UtcNow)
 				{
-					CheckForUpdateInternal(tcs, s);
+					return await CheckForUpdateInternal(s);
 				} else {
-					tcs.SetResult(null);
+					return null;
 				}
 			} else {
-				tcs.SetResult(null);
+				return null;
 			}
-			return tcs.Task;
 		}
 
 		public static Task<string> CheckForUpdatesAsync(ILSpySettings spySettings)
 		{
-			var tcs = new TaskCompletionSource<string>();
 			UpdateSettings s = new UpdateSettings(spySettings);
-			CheckForUpdateInternal(tcs, s);
-			return tcs.Task;
+			return CheckForUpdateInternal(s);
 		}
 
-		static void CheckForUpdateInternal(TaskCompletionSource<string> tcs, UpdateSettings s)
+		static async Task<string> CheckForUpdateInternal(UpdateSettings s)
 		{
-			GetLatestVersionAsync().ContinueWith(
-				delegate (Task<AvailableVersionInfo> task) {
-					try {
-						s.LastSuccessfulUpdateCheck = DateTime.UtcNow;
-						AvailableVersionInfo v = task.Result;
-						if (v.Version > currentVersion)
-							tcs.SetResult(v.DownloadUrl);
-						else
-							tcs.SetResult(null);
-					} catch (AggregateException) {
-						// ignore errors getting the version info
-						tcs.SetResult(null);
-					}
-				});
+			try {
+				var v = await GetLatestVersionAsync();
+				s.LastSuccessfulUpdateCheck = DateTime.UtcNow;
+				if (v.Version > currentVersion)
+					return v.DownloadUrl;
+				else
+					return null;
+			} catch (Exception) {
+				// ignore errors getting the version info
+				return null;
+			}
 		}
 	}
 	

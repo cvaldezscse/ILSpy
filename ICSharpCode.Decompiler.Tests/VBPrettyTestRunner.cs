@@ -47,7 +47,7 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		static readonly CompilerOptions[] defaultOptions =
-{
+		{
 			CompilerOptions.None,
 			CompilerOptions.Optimize,
 			CompilerOptions.UseRoslyn,
@@ -55,23 +55,45 @@ namespace ICSharpCode.Decompiler.Tests
 		};
 
 		static readonly CompilerOptions[] roslynOnlyOptions =
-{
+		{
 			CompilerOptions.UseRoslyn,
 			CompilerOptions.Optimize | CompilerOptions.UseRoslyn,
 		};
 
 		[Test, Ignore("Implement VB async/await")]
-		public void Async([ValueSource("defaultOptions")] CompilerOptions options)
+		public void Async([ValueSource(nameof(defaultOptions))] CompilerOptions options)
 		{
 			Run(options: options);
+		}
+
+		[Test] // TODO: legacy VB compound assign
+		public void VBCompoundAssign([ValueSource(nameof(roslynOnlyOptions))] CompilerOptions options)
+		{
+			Run(options: options | CompilerOptions.Library);
+		}
+
+		[Test]
+		public void Select([ValueSource(nameof(defaultOptions))] CompilerOptions options)
+		{
+			Run(options: options | CompilerOptions.Library);
+		}
+
+		[Test]
+		public void Issue1906([ValueSource(nameof(defaultOptions))] CompilerOptions options)
+		{
+			Run(options: options | CompilerOptions.Library);
 		}
 
 		void Run([CallerMemberName] string testName = null, CompilerOptions options = CompilerOptions.UseDebug, DecompilerSettings settings = null)
 		{
 			var vbFile = Path.Combine(TestCasePath, testName + ".vb");
 			var csFile = Path.Combine(TestCasePath, testName + ".cs");
+			var exeFile = Path.Combine(TestCasePath, testName) + Tester.GetSuffix(options) + ".exe";
+			if (options.HasFlag(CompilerOptions.Library)) {
+				exeFile = Path.ChangeExtension(exeFile, ".dll");
+			}
 
-			var executable = Tester.CompileVB(vbFile, options);
+			var executable = Tester.CompileVB(vbFile, options | CompilerOptions.ReferenceVisualBasic, exeFile);
 			var decompiled = Tester.DecompileCSharp(executable.PathToAssembly, settings);
 
 			CodeAssert.FilesAreEqual(csFile, decompiled);

@@ -19,6 +19,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ICSharpCode.Decompiler.CSharp.Resolver;
 using ICSharpCode.Decompiler.CSharp.Syntax;
 using ICSharpCode.Decompiler.IL;
 using ICSharpCode.Decompiler.Semantics;
@@ -40,8 +41,8 @@ namespace ICSharpCode.Decompiler.CSharp
 	/// <summary>
 	/// Currently unused; we'll probably use the LdToken ILInstruction as annotation instead when LdToken support gets reimplemented.
 	/// </summary>
-	public class LdTokenAnnotation {}
-	
+	public class LdTokenAnnotation { }
+
 	public static class AnnotationExtensions
 	{
 		internal static ExpressionWithILInstruction WithILInstruction(this Expression expression, ILInstruction instruction)
@@ -97,14 +98,30 @@ namespace ICSharpCode.Decompiler.CSharp
 			expression.Expression.AddAnnotation(resolveResult);
 			return new TranslatedExpression(expression, resolveResult);
 		}
-		
+
 		/// <summary>
 		/// Retrieves the <see cref="ISymbol"/> associated with this AstNode, or null if no symbol is associated with the node.
 		/// </summary>
 		public static ISymbol GetSymbol(this AstNode node)
 		{
 			var rr = node.Annotation<ResolveResult>();
-			return rr != null ? rr.GetSymbol() : null;
+			if (rr is MethodGroupResolveResult) {
+				// delegate construction?
+				var newObj = node.Annotation<NewObj>();
+				if (newObj != null) {
+					var funcptr = newObj.Arguments.ElementAtOrDefault(1);
+					if (funcptr is LdFtn ldftn) {
+						return ldftn.Method;
+					} else if (funcptr is LdVirtFtn ldVirtFtn) {
+						return ldVirtFtn.Method;
+					}
+				}
+				var ldVirtDelegate = node.Annotation<LdVirtDelegate>();
+				if (ldVirtDelegate != null) {
+					return ldVirtDelegate.Method;
+				}
+			}
+			return rr?.GetSymbol();
 		}
 
 		/// <summary>
@@ -191,7 +208,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			return node;
 		}
 	}
-	
+
 	/// <summary>
 	/// Represents a reference to a local variable.
 	/// </summary>
@@ -206,7 +223,7 @@ namespace ICSharpCode.Decompiler.CSharp
 
 		public ILVariableResolveResult(ILVariable v, IType type) : base(type)
 		{
-			this.Variable = v ?? throw new ArgumentNullException("v");
+			this.Variable = v ?? throw new ArgumentNullException(nameof(v));
 		}
 	}
 
@@ -238,6 +255,20 @@ namespace ICSharpCode.Decompiler.CSharp
 		public ImplicitReturnAnnotation(Leave leave)
 		{
 			this.Leave = leave;
+		}
+	}
+
+	/// <summary>
+	/// Annotates an expression when an implicit user-defined conversion was omitted.
+	/// </summary>
+	public class ImplicitConversionAnnotation
+	{
+		public readonly ConversionResolveResult ConversionResolveResult;
+		public IType TargetType => ConversionResolveResult.Type;
+
+		public ImplicitConversionAnnotation(ConversionResolveResult conversionResolveResult)
+		{
+			this.ConversionResolveResult = conversionResolveResult;
 		}
 	}
 }

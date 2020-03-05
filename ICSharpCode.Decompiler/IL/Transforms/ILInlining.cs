@@ -226,7 +226,8 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				if (loadInst.OpCode == OpCode.LdLoca) {
 					// it was an ldloca instruction, so we need to use the pseudo-opcode 'addressof'
 					// to preserve the semantics of the compiler-generated temporary
-					loadInst.ReplaceWith(new AddressOf(inlinedExpression));
+					Debug.Assert(((LdLoca)loadInst).Variable == v);
+					loadInst.ReplaceWith(new AddressOf(inlinedExpression, v.Type));
 				} else {
 					loadInst.ReplaceWith(inlinedExpression);
 				}
@@ -248,7 +249,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			// Thus, we have to ensure we're operating on an r-value.
 			// Additionally, we cannot inline in cases where the C# compiler prohibits the direct use
 			// of the rvalue (e.g. M(ref (MyStruct)obj); is invalid).
-			if (!IsUsedAsThisPointerInCall(loadInst))
+			if (!IsUsedAsThisPointerInCall(loadInst, out var method))
 				return false;
 			switch (ClassifyExpression(inlinedExpression)) {
 				case ExpressionClassification.RValue:
@@ -260,29 +261,61 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				case ExpressionClassification.ReadonlyLValue:
 					// For struct method calls on readonly lvalues, the C# compiler
 					// only generates a temporary if it isn't a "readonly struct"
-					return !(v.Type.GetDefinition()?.IsReadOnly == true);
+					return MethodRequiresCopyForReadonlyLValue(method);
 				default:
 					throw new InvalidOperationException("invalid expression classification");
 			}
 		}
 
+		internal static bool MethodRequiresCopyForReadonlyLValue(IMethod method)
+		{
+			if (method == null)
+				return true;
+			var type = method.DeclaringType;
+			if (type.IsReferenceType == true)
+				return false; // reference types are never implicitly copied
+			if (method.ThisIsRefReadOnly)
+				return false; // no copies for calls on readonly structs
+			return true;
+		}
+
 		internal static bool IsUsedAsThisPointerInCall(LdLoca ldloca)
 		{
+			return IsUsedAsThisPointerInCall(ldloca, out _);
+		}
+
+		static bool IsUsedAsThisPointerInCall(LdLoca ldloca, out IMethod method)
+		{
+			method = null;
 			if (ldloca.ChildIndex != 0)
 				return false;
 			if (ldloca.Variable.Type.IsReferenceType ?? false)
 				return false;
-			switch (ldloca.Parent.OpCode) {
+			ILInstruction inst = ldloca;
+			while (inst.Parent is LdFlda ldflda) {
+				inst = ldflda;
+			}
+			switch (inst.Parent.OpCode) {
 				case OpCode.Call:
 				case OpCode.CallVirt:
-					var method = ((CallInstruction)ldloca.Parent).Method;
-					if (method.IsAccessor && method.AccessorKind != MethodSemanticsAttributes.Getter) {
-						// C# doesn't allow calling setters on temporary structs
-						return false;
+					method = ((CallInstruction)inst.Parent).Method;
+					if (method.IsAccessor) {
+						if (method.AccessorKind == MethodSemanticsAttributes.Getter) {
+							// C# doesn't allow property compound assignments on temporary structs
+							return !(inst.Parent.Parent is CompoundAssignmentInstruction cai
+								&& cai.TargetKind == CompoundTargetKind.Property
+								&& cai.Target == inst.Parent);
+						} else {
+							// C# doesn't allow calling setters on temporary structs
+							return false;
+						}
 					}
 					return !method.IsStatic;
 				case OpCode.Await:
+					method = ((Await)inst.Parent).GetAwaiterMethod;
 					return true;
+				case OpCode.NullableUnwrap:
+					return ((NullableUnwrap)inst.Parent).RefInput;
 				default:
 					return false;
 			}
@@ -306,7 +339,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			switch (inst.OpCode) {
 				case OpCode.LdLoc:
 				case OpCode.StLoc:
-					if (IsReadonlyRefLocal(((IInstructionWithVariableOperand)inst).Variable)) {
+					if (((IInstructionWithVariableOperand)inst).Variable.IsRefReadOnly) {
 						return ExpressionClassification.ReadonlyLValue;
 					} else {
 						return ExpressionClassification.MutableLValue;
@@ -340,40 +373,31 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			}
 		}
 
-		private static bool IsReadonlyReference(ILInstruction addr)
+		internal static bool IsReadonlyReference(ILInstruction addr)
 		{
 			switch (addr) {
 				case LdFlda ldflda:
-					return ldflda.Field.IsReadOnly;
+					return ldflda.Field.IsReadOnly
+						|| (ldflda.Field.DeclaringType.Kind == TypeKind.Struct && IsReadonlyReference(ldflda.Target));
 				case LdsFlda ldsflda:
 					return ldsflda.Field.IsReadOnly;
 				case LdLoc ldloc:
-					return IsReadonlyRefLocal(ldloc.Variable);
+					return ldloc.Variable.IsRefReadOnly;
 				case Call call:
 					return call.Method.ReturnTypeIsRefReadOnly;
+				case AddressOf _:
+					// C# doesn't allow mutation of value-type temporaries
+					return true;
 				default:
 					return false;
 			}
-		}
-
-		private static bool IsReadonlyRefLocal(ILVariable variable)
-		{
-			if (variable.Kind == VariableKind.Parameter) {
-				if (variable.Index == -1) {
-					// this parameter in readonly struct
-					return variable.Function.Method?.DeclaringTypeDefinition?.IsReadOnly == true;
-				} else {
-					return variable.Function.Parameters[variable.Index.Value].IsIn;
-				}
-			}
-			return false;
 		}
 
 		/// <summary>
 		/// Determines whether a variable should be inlined in non-aggressive mode, even though it is not a generated variable.
 		/// </summary>
 		/// <param name="next">The next top-level expression</param>
-		/// <param name="loadInst">The load within 'next'</param>
+		/// <param name="v">The variable being eliminated by inlining.</param>
 		/// <param name="inlinedExpression">The expression being inlined</param>
 		static bool NonAggressiveInlineInto(ILInstruction next, FindResult findResult, ILInstruction inlinedExpression, ILVariable v)
 		{
@@ -402,7 +426,13 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					}
 					break;
 			}
-			
+			if (inlinedExpression.ResultType == StackType.Ref) {
+				// VB likes to use ref locals for compound assignment
+				// (the C# compiler uses ref stack slots instead).
+				// We want to avoid unnecessary ref locals, so we'll always inline them if possible.
+				return true;
+			}
+
 			var parent = loadInst.Parent;
 			if (NullableLiftingTransform.MatchNullableCtor(parent, out _, out _)) {
 				// inline into nullable ctor call in lifted operator
@@ -424,13 +454,22 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					return true; // inline into (left slot of) user-defined && or || operator
 				case OpCode.DynamicGetMemberInstruction:
 				case OpCode.DynamicGetIndexInstruction:
-				case OpCode.LdObj:
 					if (parent.Parent.OpCode == OpCode.DynamicCompoundAssign)
 						return true; // inline into dynamic compound assignments
 					break;
-				case OpCode.ArrayToPointer:
+				case OpCode.DynamicCompoundAssign:
+					return true;
+				case OpCode.GetPinnableReference:
 				case OpCode.LocAllocSpan:
 					return true; // inline size-expressions into localloc.span
+				case OpCode.Call:
+				case OpCode.CallVirt:
+					// Aggressive inline into property/indexer getter calls for compound assignment calls
+					// (The compiler generates locals for these because it doesn't want to evalute the args twice for getter+setter)
+					if (parent.SlotInfo == CompoundAssignmentInstruction.TargetSlot) {
+						return true;
+					}
+					break;
 			}
 			// decide based on the top-level target instruction into which we are inlining:
 			switch (next.OpCode) {

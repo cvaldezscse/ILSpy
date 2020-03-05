@@ -41,6 +41,12 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		bool ReturnTypeIsRefReadOnly { get; }
 
 		/// <summary>
+		/// Gets whether the method accepts the 'this' reference as ref readonly.
+		/// This can be either because the method is C# 8.0 'readonly', or because it is within a C# 7.2 'readonly struct'
+		/// </summary>
+		bool ThisIsRefReadOnly { get; }
+
+		/// <summary>
 		/// Gets the type parameters of this method; or an empty list if the method is not generic.
 		/// </summary>
 		IReadOnlyList<ITypeParameter> TypeParameters { get; }
@@ -53,6 +59,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		IReadOnlyList<IType> TypeArguments { get; }
 
 		bool IsExtensionMethod { get; }
+		bool IsLocalFunction { get; }
 		bool IsConstructor { get; }
 		bool IsDestructor { get; }
 		bool IsOperator { get; }
@@ -81,8 +88,9 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		MethodSemanticsAttributes AccessorKind { get; }
 
 		/// <summary>
-		/// If this method is reduced from an extension method return the original method, <c>null</c> otherwise.
-		/// A reduced method doesn't contain the extension method parameter. That means that has one parameter less than it's definition.
+		/// If this method is reduced from an extension method or a local function returns the original method, <c>null</c> otherwise.
+		/// A reduced method doesn't contain the extension method parameter. That means that it has one parameter less than its definition.
+		/// A local function doesn't contain compiler-generated method parameters at the end.
 		/// </summary>
 		IMethod ReducedFrom { get; }
 		

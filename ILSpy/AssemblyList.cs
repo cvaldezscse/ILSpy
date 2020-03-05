@@ -70,6 +70,15 @@ namespace ICSharpCode.ILSpy
 			}
 			this.dirty = false; // OpenAssembly() sets dirty, so reset it afterwards
 		}
+
+		/// <summary>
+		/// Creates a copy of an assembly list.
+		/// </summary>
+		public AssemblyList(AssemblyList list, string newName)
+			: this(newName)
+		{
+			this.assemblies.AddRange(list.assemblies);
+		}
 		
 		/// <summary>
 		/// Gets the loaded assemblies. This method is thread-safe.
@@ -235,16 +244,22 @@ namespace ICSharpCode.ILSpy
 			if (target == null)
 				return null;
 
+			return ReloadAssembly(target);
+		}
+
+		public LoadedAssembly ReloadAssembly(LoadedAssembly target)
+		{
 			var index = this.assemblies.IndexOf(target);
-			var newAsm = new LoadedAssembly(this, file);
+			var newAsm = new LoadedAssembly(this, target.FileName);
 			newAsm.IsAutoLoaded = target.IsAutoLoaded;
+			newAsm.PdbFileOverride = target.PdbFileOverride;
 			lock (assemblies) {
 				this.assemblies.Remove(target);
 				this.assemblies.Insert(index, newAsm);
 			}
 			return newAsm;
 		}
-		
+
 		public void Unload(LoadedAssembly assembly)
 		{
 			App.Current.Dispatcher.VerifyAccess();

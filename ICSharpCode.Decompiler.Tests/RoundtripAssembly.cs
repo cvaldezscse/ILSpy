@@ -69,11 +69,7 @@ namespace ICSharpCode.Decompiler.Tests
 		[Test]
 		public void ICSharpCode_Decompiler()
 		{
-			try {
-				RunWithTest("ICSharpCode.Decompiler", "ICSharpCode.Decompiler.dll", "ICSharpCode.Decompiler.Tests.exe");
-			} catch (CompilationFailedException) {
-				Assert.Ignore("C# 7 local functions not yet supported.");
-			}
+			RunOnly("ICSharpCode.Decompiler", "ICSharpCode.Decompiler.dll");
 		}
 
 		[Test]
@@ -106,19 +102,24 @@ namespace ICSharpCode.Decompiler.Tests
 			RunWithOutput("Random Tests\\TestCases", "TestCase-1.exe");
 		}
 
-		void RunWithTest(string dir, string fileToRoundtrip, string fileToTest)
+		void RunWithTest(string dir, string fileToRoundtrip, string fileToTest, string keyFile = null)
 		{
-			RunInternal(dir, fileToRoundtrip, outputDir => RunTest(outputDir, fileToTest));
+			RunInternal(dir, fileToRoundtrip, outputDir => RunTest(outputDir, fileToTest), keyFile);
 		}
-		
+
 		void RunWithOutput(string dir, string fileToRoundtrip)
 		{
 			string inputDir = Path.Combine(TestDir, dir);
 			RunInternal(dir, fileToRoundtrip,
 				outputDir => Tester.RunAndCompareOutput(fileToRoundtrip, Path.Combine(inputDir, fileToRoundtrip), Path.Combine(outputDir, fileToRoundtrip)));
 		}
-		
-		void RunInternal(string dir, string fileToRoundtrip, Action<string> testAction)
+
+		void RunOnly(string dir, string fileToRoundtrip)
+		{
+			RunInternal(dir, fileToRoundtrip, outputDir => { });
+		}
+
+		void RunInternal(string dir, string fileToRoundtrip, Action<string> testAction, string snkFilePath = null)
 		{
 			if (!Directory.Exists(TestDir)) {
 				Assert.Ignore($"Assembly-roundtrip test ignored: test directory '{TestDir}' needs to be checked out separately." + Environment.NewLine +
@@ -156,6 +157,9 @@ namespace ICSharpCode.Decompiler.Tests
 						decompiler.Settings = new DecompilerSettings(LanguageVersion.CSharp7_3);
 						// use a fixed GUID so that we can diff the output between different ILSpy runs without spurious changes
 						decompiler.ProjectGuid = Guid.Parse("{127C83E4-4587-4CF9-ADCA-799875F3DFE6}");
+						if (snkFilePath != null) {
+							decompiler.StrongNameKeyFile = Path.Combine(inputDir, snkFilePath);
+						}
 						decompiler.DecompileProject(module, decompiledDir);
 						Console.WriteLine($"Decompiled {fileToRoundtrip} in {w.Elapsed.TotalSeconds:f2}");
 						projectFile = Path.Combine(decompiledDir, module.Name + ".csproj");

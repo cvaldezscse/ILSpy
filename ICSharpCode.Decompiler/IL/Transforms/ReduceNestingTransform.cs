@@ -29,7 +29,7 @@ namespace ICSharpCode.Decompiler.IL
 	/// Improves code quality by duplicating keyword exits to reduce nesting and restoring IL order.
 	/// </summary>
 	/// <remarks>
-	/// ConditionDetection and DetectSwitchBody both have agressive inlining policies for else blocks and default cases respectively.
+	/// ConditionDetection and DetectSwitchBody both have aggressive inlining policies for else blocks and default cases respectively.
 	/// This can lead to excessive indentation when the entire rest of the method/loop is included in the else block/default case.
 	/// When an If/SwitchInstruction is followed immediately by a keyword exit, the exit can be moved into the child blocks
 	/// allowing the else block or default case to be moved after the if/switch as all prior cases exit.
@@ -194,6 +194,18 @@ namespace ICSharpCode.Decompiler.IL
 				// if (cond) { ...; exit; }
 				// ...; exit;
 				EnsureEndPointUnreachable(ifInst.TrueInst, exitInst);
+				if (ifInst.FalseInst.HasFlag(InstructionFlags.EndPointUnreachable)) {
+					Debug.Assert(ifInst.HasFlag(InstructionFlags.EndPointUnreachable));
+					Debug.Assert(ifInst.Parent == block);
+					int removeAfter = ifInst.ChildIndex + 1;
+					if (removeAfter < block.Instructions.Count) {
+						// Remove all instructions that ended up dead
+						// (this should just be exitInst itself)
+						Debug.Assert(block.Instructions.SecondToLastOrDefault() == ifInst);
+						Debug.Assert(block.Instructions.Last() == exitInst);
+						block.Instructions.RemoveRange(removeAfter, block.Instructions.Count - removeAfter);
+					}
+				}
 				ExtractElseBlock(ifInst);
 				ifInst = elseIfInst;
 			} while (ifInst != null);
@@ -215,6 +227,8 @@ namespace ICSharpCode.Decompiler.IL
 			var switchInst = (SwitchInstruction)switchContainer.EntryPoint.Instructions.Single();
 			var defaultSection = switchInst.Sections.MaxBy(s => s.Labels.Count());
 			if (!defaultSection.Body.MatchBranch(out var defaultBlock) || defaultBlock.IncomingEdgeCount != 1)
+				return false;
+			if (defaultBlock.Parent != switchContainer)
 				return false;
 			
 			// tally stats for heuristic from each case block

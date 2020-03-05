@@ -18,6 +18,7 @@
 
 #pragma warning disable 1998
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
@@ -25,6 +26,8 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 {
 	public class Async
 	{
+		private int memberField;
+
 		public async void SimpleVoidMethod()
 		{
 			Console.WriteLine("Before");
@@ -69,6 +72,16 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 		public async Task TaskMethodWithoutAwait()
 		{
 			Console.WriteLine("No Await");
+		}
+
+		public async Task CapturingThis()
+		{
+			await Task.Delay(memberField);
+		}
+
+		public async Task CapturingThisWithoutAwait()
+		{
+			Console.WriteLine(memberField);
 		}
 
 		public async Task<bool> SimpleBoolTaskMethod()
@@ -126,6 +139,98 @@ namespace ICSharpCode.Decompiler.Tests.TestCases.Pretty
 			}
 		}
 #endif
+
+		public static async Task<int> GetIntegerSumAsync(IEnumerable<int> items)
+		{
+			await Task.Delay(100);
+			int num = 0;
+			foreach (int item in items) {
+				num += item;
+			}
+			return num;
+		}
+
+		public static Func<Task<int>> AsyncLambda()
+		{
+			return async () => await GetIntegerSumAsync(new int[3] {
+				1,
+				2,
+				3
+			});
+		}
+
+		public static Func<Task<int>> AsyncDelegate()
+		{
+			return async delegate {
+				await Task.Delay(10);
+				return 2;
+			};
+		}
+
+		public static async Task AlwaysThrow()
+		{
+			throw null;
+		}
+
+		public static async Task InfiniteLoop()
+		{
+			while (true) {
+			}
+		}
+
+		public static async Task InfiniteLoopWithAwait()
+		{
+			while (true) {
+				await Task.Delay(10);
+			}
+		}
+
+		public async Task AsyncWithLocalVar()
+		{
+			object a = new object();
+#if CS70
+			(object, string) tuple = (new object(), "abc");
+#endif
+			await UseObj(a);
+			await UseObj(a);
+#if CS70
+			await UseObj(tuple);
+#endif
+		}
+
+		public static async Task UseObj(object a)
+		{
+		}
+
+#if CS70
+		public static async Task<int> AsyncLocalFunctions()
+		{
+			return await Nested(1) + await Nested(2);
+
+#if CS80
+			static async Task<int> Nested(int i)
+#else
+			async Task<int> Nested(int i)
+#endif
+			{
+				await Task.Delay(i);
+				return i;
+			}
+		}
+#endif
+	}
+
+	public struct AsyncInStruct
+	{
+		private int i;
+
+		public async Task<int> Test(AsyncInStruct xx)
+		{
+			xx.i++;
+			i++;
+			await Task.Yield();
+			return i + xx.i;
+		}
 	}
 
 	public struct HopToThreadPoolAwaitable : INotifyCompletion

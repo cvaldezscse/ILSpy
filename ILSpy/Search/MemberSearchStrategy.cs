@@ -6,7 +6,7 @@ using ICSharpCode.Decompiler.TypeSystem;
 
 namespace ICSharpCode.ILSpy.Search
 {
-	class MemberSearchStrategy : AbstractSearchStrategy
+	class MemberSearchStrategy : AbstractEntitySearchStrategy
 	{
 		readonly MemberSearchKind searchKind;
 
@@ -25,13 +25,13 @@ namespace ICSharpCode.ILSpy.Search
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			var metadata = module.Metadata;
-			var typeSystem = module.GetTypeSystemOrNull();
+			var typeSystem = module.GetTypeSystemWithCurrentOptionsOrNull();
 			if (typeSystem == null) return;
 
 			if (searchKind == MemberSearchKind.All || searchKind == MemberSearchKind.Type) {
 				foreach (var handle in metadata.TypeDefinitions) {
 					cancellationToken.ThrowIfCancellationRequested();
-					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch);
+					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch, omitGenerics);
 					if (languageSpecificName != null && !IsMatch(languageSpecificName))
 						continue;
 					var type = ((MetadataModule)typeSystem.MainModule).GetDefinition(handle);
@@ -43,7 +43,7 @@ namespace ICSharpCode.ILSpy.Search
 			if (searchKind == MemberSearchKind.All || searchKind == MemberSearchKind.Member || searchKind == MemberSearchKind.Method) {
 				foreach (var handle in metadata.MethodDefinitions) {
 					cancellationToken.ThrowIfCancellationRequested();
-					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch);
+					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch, omitGenerics);
 					if (languageSpecificName != null && !IsMatch(languageSpecificName))
 						continue;
 					var method = ((MetadataModule)typeSystem.MainModule).GetDefinition(handle);
@@ -55,7 +55,7 @@ namespace ICSharpCode.ILSpy.Search
 			if (searchKind == MemberSearchKind.All || searchKind == MemberSearchKind.Member || searchKind == MemberSearchKind.Field) {
 				foreach (var handle in metadata.FieldDefinitions) {
 					cancellationToken.ThrowIfCancellationRequested();
-					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch);
+					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch, omitGenerics);
 					if (languageSpecificName != null && !IsMatch(languageSpecificName))
 						continue;
 					var field = ((MetadataModule)typeSystem.MainModule).GetDefinition(handle);
@@ -67,7 +67,7 @@ namespace ICSharpCode.ILSpy.Search
 			if (searchKind == MemberSearchKind.All || searchKind == MemberSearchKind.Member || searchKind == MemberSearchKind.Property) {
 				foreach (var handle in metadata.PropertyDefinitions) {
 					cancellationToken.ThrowIfCancellationRequested();
-					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch);
+					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch, omitGenerics);
 					if (languageSpecificName != null && !IsMatch(languageSpecificName))
 						continue;
 					var property = ((MetadataModule)typeSystem.MainModule).GetDefinition(handle);
@@ -79,7 +79,7 @@ namespace ICSharpCode.ILSpy.Search
 			if (searchKind == MemberSearchKind.All || searchKind == MemberSearchKind.Member || searchKind == MemberSearchKind.Event) {
 				foreach (var handle in metadata.EventDefinitions) {
 					cancellationToken.ThrowIfCancellationRequested();
-					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch);
+					string languageSpecificName = language.GetEntityName(module, handle, fullNameSearch, omitGenerics);
 					if (!IsMatch(languageSpecificName))
 						continue;
 					var @event = ((MetadataModule)typeSystem.MainModule).GetDefinition(handle);

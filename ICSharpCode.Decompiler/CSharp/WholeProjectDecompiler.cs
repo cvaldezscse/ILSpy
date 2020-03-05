@@ -17,7 +17,6 @@
 // DEALINGS IN THE SOFTWARE.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -35,6 +34,8 @@ using System.Reflection.Metadata;
 using static ICSharpCode.Decompiler.Metadata.DotNetCorePathFinderExtensions;
 using static ICSharpCode.Decompiler.Metadata.MetadataExtensions;
 using ICSharpCode.Decompiler.Metadata;
+using ICSharpCode.Decompiler.Solution;
+using ICSharpCode.Decompiler.DebugInfo;
 
 namespace ICSharpCode.Decompiler.CSharp
 {
@@ -72,13 +73,23 @@ namespace ICSharpCode.Decompiler.CSharp
 
 		public IAssemblyResolver AssemblyResolver { get; set; }
 
+		public IDebugInfoProvider DebugInfoProvider { get; set; }
+
 		/// <summary>
 		/// The MSBuild ProjectGuid to use for the new project.
 		/// <c>null</c> to automatically generate a new GUID.
 		/// </summary>
 		public Guid? ProjectGuid { get; set; }
 
+		/// <summary>
+		/// Path to the snk file to use for signing.
+		/// <c>null</c> to not sign.
+		/// </summary>
+		public string StrongNameKeyFile { get; set; }
+
 		public int MaxDegreeOfParallelism { get; set; } = Environment.ProcessorCount;
+
+		public IProgress<DecompilationProgress> ProgressIndicator { get; set; }
 		#endregion
 
 		// per-run members
@@ -101,7 +112,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 		}
 
-		public void DecompileProject(PEFile moduleDefinition, string targetDirectory, TextWriter projectFileWriter, CancellationToken cancellationToken = default(CancellationToken))
+		public ProjectId DecompileProject(PEFile moduleDefinition, string targetDirectory, TextWriter projectFileWriter, CancellationToken cancellationToken = default(CancellationToken))
 		{
 			if (string.IsNullOrEmpty(targetDirectory)) {
 				throw new InvalidOperationException("Must set TargetDirectory");
@@ -110,7 +121,10 @@ namespace ICSharpCode.Decompiler.CSharp
 			directories.Clear();
 			var files = WriteCodeFilesInProject(moduleDefinition, cancellationToken).ToList();
 			files.AddRange(WriteResourceFilesInProject(moduleDefinition));
-			WriteProjectFile(projectFileWriter, files, moduleDefinition);
+			if (StrongNameKeyFile != null) {
+				File.Copy(StrongNameKeyFile, Path.Combine(targetDirectory, Path.GetFileName(StrongNameKeyFile)));
+			}
+			return WriteProjectFile(projectFileWriter, files, moduleDefinition);
 		}
 
 		enum LanguageTargets
@@ -120,11 +134,12 @@ namespace ICSharpCode.Decompiler.CSharp
 		}
 
 		#region WriteProjectFile
-		void WriteProjectFile(TextWriter writer, IEnumerable<Tuple<string, string>> files, Metadata.PEFile module)
+		ProjectId WriteProjectFile(TextWriter writer, IEnumerable<Tuple<string, string>> files, Metadata.PEFile module)
 		{
 			const string ns = "http://schemas.microsoft.com/developer/msbuild/2003";
 			string platformName = GetPlatformName(module);
 			Guid guid = this.ProjectGuid ?? Guid.NewGuid();
+
 			using (XmlTextWriter w = new XmlTextWriter(writer)) {
 				w.Formatting = Formatting.Indented;
 				w.WriteStartDocument();
@@ -213,6 +228,11 @@ namespace ICSharpCode.Decompiler.CSharp
 				}
 				w.WriteElementString("WarningLevel", "4");
 				w.WriteElementString("AllowUnsafeBlocks", "True");
+				
+				if (StrongNameKeyFile != null) {
+					w.WriteElementString("SignAssembly", "True");
+					w.WriteElementString("AssemblyOriginatorKeyFile", Path.GetFileName(StrongNameKeyFile));
+				}
 
 				w.WriteEndElement(); // </PropertyGroup>
 
@@ -281,6 +301,8 @@ namespace ICSharpCode.Decompiler.CSharp
 
 				w.WriteEndDocument();
 			}
+
+			return new ProjectId(platformName, guid);
 		}
 
 		protected virtual bool IsGacAssembly(Metadata.IAssemblyReference r, Metadata.PEFile asm)
@@ -304,6 +326,7 @@ namespace ICSharpCode.Decompiler.CSharp
 		CSharpDecompiler CreateDecompiler(DecompilerTypeSystem ts)
 		{
 			var decompiler = new CSharpDecompiler(ts, settings);
+			decompiler.DebugInfoProvider = DebugInfoProvider;
 			decompiler.AstTransforms.Add(new EscapeInvalidIdentifiers());
 			decompiler.AstTransforms.Add(new RemoveCLSCompliantAttribute());
 			return decompiler;
@@ -342,6 +365,8 @@ namespace ICSharpCode.Decompiler.CSharp
 						return Path.Combine(dir, file);
 					}
 				}, StringComparer.OrdinalIgnoreCase).ToList();
+			int total = files.Count;
+			var progress = this.ProgressIndicator;
 			DecompilerTypeSystem ts = new DecompilerTypeSystem(module, AssemblyResolver, settings);
 			Parallel.ForEach(
 				files,
@@ -360,6 +385,7 @@ namespace ICSharpCode.Decompiler.CSharp
 							throw new DecompilerException(module, $"Error decompiling for '{file.Key}'", innerException);
 						}
 					}
+					progress?.Report(new DecompilationProgress(total, file.Key));
 				});
 			return files.Select(f => Tuple.Create("Compile", f.Key)).Concat(WriteAssemblyInfo(ts, cancellationToken));
 		}
@@ -486,7 +512,41 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 			if (b.Length == 0)
 				b.Append('-');
-			return b.ToString();
+			string name = b.ToString();
+			if (IsReservedFileSystemName(name))
+				return name + "_";
+			return name;
+		}
+
+		static bool IsReservedFileSystemName(string name)
+		{
+			switch (name.ToUpperInvariant()) {
+				case "AUX":
+				case "COM1":
+				case "COM2":
+				case "COM3":
+				case "COM4":
+				case "COM5":
+				case "COM6":
+				case "COM7":
+				case "COM8":
+				case "COM9":
+				case "CON":
+				case "LPT1":
+				case "LPT2":
+				case "LPT3":
+				case "LPT4":
+				case "LPT5":
+				case "LPT6":
+				case "LPT7":
+				case "LPT8":
+				case "LPT9":
+				case "NUL":
+				case "PRN":
+					return true;
+				default:
+					return false;
+			}
 		}
 
 		public static string GetPlatformName(Metadata.PEFile module)
@@ -513,6 +573,18 @@ namespace ICSharpCode.Decompiler.CSharp
 				default:
 					return architecture.ToString();
 			}
+		}
+	}
+
+	public readonly struct DecompilationProgress
+	{
+		public readonly int TotalNumberOfFiles;
+		public readonly string Status;
+
+		public DecompilationProgress(int total, string status = null)
+		{
+			this.TotalNumberOfFiles = total;
+			this.Status = status ?? "";
 		}
 	}
 }

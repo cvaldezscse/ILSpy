@@ -83,8 +83,14 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
-		public void FloatingPointArithmetic([ValueSource("defaultOptions")] CompilerOptions options)
+		public void FloatingPointArithmetic([ValueSource("noMonoOptions")] CompilerOptions options, [Values(32, 64)] int bits)
 		{
+			// The behavior of the #1794 incorrect `(float)(double)val` cast only causes test failures
+			// for some runtime+compiler combinations.
+			if (bits == 32)
+				options |= CompilerOptions.Force32Bit;
+			// Mono is excluded because we never use it for the second pass, so the test ends up failing
+			// due to some Mono vs. Roslyn compiler differences.
 			RunCS(options: options);
 		}
 
@@ -197,12 +203,6 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
-		public void RefLocalsAndReturns([ValueSource("roslynOnlyOptions")] CompilerOptions options)
-		{
-			RunCS(options: options);
-		}
-
-		[Test]
 		public void BitNot([Values(false, true)] bool force32Bit)
 		{
 			CompilerOptions compiler = CompilerOptions.UseDebug;
@@ -287,17 +287,17 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void StringConcat([ValueSource("defaultOptions")] CompilerOptions options)
+		{
+			RunCS(options: options);
+		}
+
+		[Test]
 		public void MiniJSON([ValueSource("defaultOptions")] CompilerOptions options)
 		{
 			if (options.HasFlag(CompilerOptions.UseMcs)) {
 				Assert.Ignore("Decompiler bug with mono!");
 			}
-			RunCS(options: options);
-		}
-
-		[Test]
-		public void LocalFunctions([ValueSource(nameof(roslynOnlyOptions))] CompilerOptions options)
-		{
 			RunCS(options: options);
 		}
 

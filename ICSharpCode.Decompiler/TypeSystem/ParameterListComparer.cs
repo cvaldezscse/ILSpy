@@ -66,11 +66,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 					return false;
 
 				if (includeModifiers) {
-					if (a.IsIn != b.IsIn)
-						return false;
-					if (a.IsOut != b.IsOut)
-						return false;
-					if (a.IsRef != b.IsRef)
+					if (a.ReferenceKind != b.ReferenceKind)
 						return false;
 					if (a.IsParams != b.IsParams)
 						return false;
@@ -115,7 +111,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		public SignatureComparer(StringComparer nameComparer)
 		{
 			if (nameComparer == null)
-				throw new ArgumentNullException("nameComparer");
+				throw new ArgumentNullException(nameof(nameComparer));
 			this.nameComparer = nameComparer;
 		}
 		
